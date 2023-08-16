@@ -165,7 +165,7 @@ def copy_arch_libs(arch, required_libs, plugins, platform_lib_dir, user_plugins,
         raise ValueError('rti: {} is not currently a supported platform'.format(arch))
     copy_libs = []
 
-    dst_dir = os.path.join(get_script_dir(), 'platform', arch, 'lib')
+    dst_dir = os.path.join(get_script_dir(), 'rti')
     if not os.path.exists(dst_dir):
         os.makedirs(dst_dir)
 
@@ -229,15 +229,10 @@ def copy_arch_libs(arch, required_libs, plugins, platform_lib_dir, user_plugins,
     return required_map, list(set(plugin_list))
 
 
-def update_config(nddshome, platform, jobs, debug, lib_dict, plugins, toolchain, python_root):
+def update_config(nddshome, platform, debug, lib_dict, plugins, version, python_root):
     pyproject_filename = 'pyproject.toml'
     manifest_filename = "MANIFEST.in"
     packagecfg_filename = 'package.cfg'
-
-    if toolchain:
-        if not python_root:
-            raise argparse.ArgumentError('Python root directory must be specified for cross compile')
-        toolchain = os.path.abspath(toolchain)
 
     if python_root:
         python_root = os.path.abspath(python_root)
@@ -247,12 +242,6 @@ def update_config(nddshome, platform, jobs, debug, lib_dict, plugins, toolchain,
     # Modify pyproject.toml template
     config = configparser.ConfigParser()
     config.read(os.path.join(get_script_dir(), 'templates',pyproject_filename))
-    requires = ast.literal_eval(config.get('build-system', 'requires'))
-    if 'Darwin' in platform:
-        requires.append('delocate')
-    elif 'Linux' in platform:
-        requires.append('patchelf-wrapper')
-    config.set('build-system', 'requires', str(requires))
     with open(os.path.join(get_script_dir(), pyproject_filename), 'w') as pyproject_file:
         config.write(pyproject_file)
 
@@ -266,19 +255,49 @@ def update_config(nddshome, platform, jobs, debug, lib_dict, plugins, toolchain,
     # Create package.cfg file
     config = configparser.ConfigParser()
     config.add_section('package')
+    if version is not None:
+        config.set('package', 'version', '.'.join(map(str, version)))
     config.set('package', 'nddshome', nddshome)
     config.set('package', 'platform', platform)
     config.set('package', 'packages', ','.join(lib_dict.keys()))
     for key, value in lib_dict.items():
         config.set('package', 'libraries-' + key, ','.join(value))
     config.set('package', 'build-type', 'debug' if debug else 'release')
-    config.set('package', 'build-jobs', str(jobs))
-    if toolchain:
-        config.set('package', 'cmake-toolchain', toolchain)
     if python_root:
         config.set('package', 'python-root', python_root)
     with open(os.path.join(get_script_dir(), packagecfg_filename), 'w') as packagecfg_file:
         config.write(packagecfg_file)
+
+
+def validate_config(nddshome, version, force=False):
+
+    errors = []
+
+    if version is None:
+        errors.append(f"Could not determine the version of the Connext installation in {nddshome}")
+        return
+
+    # check if the python package rti.connext is installed:
+    try:
+        import rti.connextdds
+
+        # get rti.connextdds version
+        connext_version = rti.connextdds.ProductVersion.current
+        rti_connextdds_version = (connext_version.major_version, connext_version.minor_version, connext_version.release_version, connext_version.revision_version)
+        if version[0] != rti_connextdds_version[0] or version[1] != rti_connextdds_version[1] or version[2] != rti_connextdds_version[2]:
+            errors.append(
+                f"Connext target installation version {version} is not compatible with rti.connext version {rti_connextdds_version}")
+
+    except ImportError:
+        errors.append('rti.connext is not installed. Please install it before configuring this package')
+    except Exception as ex:
+        errors.append(f'Could not validate rti.connext version: {ex}')
+
+    if errors and not force:
+        print('*** Errors validating rti.connext installation ***\n')
+        print('\n'.join(errors))
+        print("\nRun with --force to ignore.\n")
+        raise RuntimeError("Errors validating rti.connext installation (see above). Run with --force to ignore.")
 
 
 PlatformLibEnds = collections.namedtuple('PlatformLibEnds', ['prefix', 'suffix'])
@@ -291,15 +310,11 @@ rti_platform_ends = {
 
 
 rti_required_libs = {
-    'rti': ['nddsc', 'nddscore', 'nddscpp2'],
-    'rti.logging': ['rtidlc'],
-    'rti.request': ['rticonnextmsgcpp2']
 }
-
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Configure build of connextdds-py package',
+        description='Configure a project that builds a wheel file with the selected Connext Python Add-ons.',
         add_help=True)
 
     parser.add_argument(
@@ -307,32 +322,25 @@ def main():
         '--nddshome',
         type=dir_type,
         default=None,
-        help='Location of NDDSHOME.')
-
-    parser.add_argument(
-        '-j',
-        '--jobs',
-        type=int,
-        default=1,
-        help='Number of concurrent build jobs/processes.')
+        help='Connext target installation directory (NDDSHOME).')
 
     parser.add_argument(
         '-t',
         '--tcp',
         action='store_true',
-        help='Add the TCP plugin to the output wheel')
+        help='Add the Connext TCP plugin to the output wheel')
 
     parser.add_argument(
         '-m',
         '--monitoring',
         action='store_true',
-        help='Add the RTI Monitoring plugin to the output wheel')
+        help='Add the Connext Monitoring plugin to the output wheel')
 
     parser.add_argument(
         '-s',
         '--secure',
         action='store_true',
-        help='Add the RTI DDS Secure libraries and dependencies to the output wheel.')
+        help='Add the Connext Secure libraries and dependencies to the output wheel.')
 
     parser.add_argument(
         '-p',
@@ -362,16 +370,14 @@ def main():
         help='Location of Python root directory')
 
     parser.add_argument(
-        '-c',
-        '--cmake-toolchain',
-        type=file_type,
-        default=None,
-        help='Location of cmake toolchain file for cross compilation')
+        '--force',
+        action="store_true",
+        help='Ignore errors validating Connext installation.')
 
     parser.add_argument(
         'platform',
         type=str,
-        help='Platform libs to use for the build.')
+        help='RTI target architecture string that identifies the platform (directory at $NDDSHOME/lib/<architecture>).')
 
 
     args = parser.parse_args()
@@ -397,6 +403,9 @@ def main():
 
     user_plugins = args.plugin if args.plugin is not None else []
 
+
+    validate_config(nddshome, version, args.force)
+
     required, plugins = copy_arch_libs(
                             args.platform,
                             rti_required_libs,
@@ -410,14 +419,16 @@ def main():
     update_config(
         nddshome,
         platform,
-        args.jobs,
         debug,
         required,
         plugins,
-        args.cmake_toolchain,
+        version,
         args.python_root)
 
-    print('Finished! Run "pip wheel ." to create whl file.')
+    print('\n*** Configuration was succesful *** \n')
+    print('To install the add-on libraries directly run: \n$ pip install .')
+    print('\n -or-\n')
+    print('To create a wheel file run:\n$ python setup.py bdist_wheel')
 
 
 if __name__ == '__main__':

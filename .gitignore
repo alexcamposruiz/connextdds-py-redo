@@ -9,11 +9,10 @@ docs/build/
 
 build/
 dist/
-rti.connext.egg-info
+rti.addons.egg-info
 rti.egg-info
-rti_connext_dds-6.1.0/
 
-platform/
+rti/
 package.cfg
 pyproject.toml
 !templates/pyproject.toml
