@@ -42,6 +42,10 @@ def get_wheel_plugins(args):
         plugins.append('nddssecurity')
     if args.monitoring:
         plugins.append('rtimonitoring')
+    if args.observability:
+        plugins.append('rtimonitoring2')
+    if args.wan:
+        plugins.append('nddsrwt')
     return plugins
 
 
@@ -325,19 +329,26 @@ def main():
         help='Connext target installation directory (NDDSHOME).')
 
     parser.add_argument(
-        '-t',
         '--tcp',
         action='store_true',
-        help='Add the Connext TCP plugin to the output wheel')
+        help='Add the Connext TCP Transport plugin to the output wheel')
 
     parser.add_argument(
-        '-m',
+        '--wan',
+        action='store_true',
+        help='Add the Connext Real-Time WAN Transport to the output wheel.')
+
+    parser.add_argument(
         '--monitoring',
         action='store_true',
         help='Add the Connext Monitoring plugin to the output wheel')
 
     parser.add_argument(
-        '-s',
+        '--observability',
+        action='store_true',
+        help='Add the Connext Observability plugin (Monitoring v2) to the output wheel')
+
+    parser.add_argument(
         '--secure',
         action='store_true',
         help='Add the Connext Secure libraries and dependencies to the output wheel.')
@@ -350,7 +361,6 @@ def main():
         help='Add a user-defined plugin to the output wheel. This option can be specified multiple times.')
 
     parser.add_argument(
-        '-o',
         '--openssl',
         type=dir_type,
         default=None,
