@@ -210,12 +210,13 @@ def copy_arch_libs(arch, required_libs, plugins, platform_lib_dir, user_plugins,
         plugin_list.append(lib_ends.prefix + plugin + get_debug_suffix(is_debug) + lib_ends.suffix)
         if plugin == 'nddssecurity':
             # needs to also get openssl libs
-            if not openssl_lib_dir:
-                openssl_lib_dir = platform_lib_dir
-            openssl_libs = get_openssl_libs(version, arch, platform_lib_dir, openssl_lib_dir, is_debug)
-            for lib in openssl_libs:
-                plugin_list.append(os.path.basename(lib))
-                copy_libs.append(valid_lib_pair(lib, os.path.join(dst_dir, os.path.basename(lib))))
+            # if not openssl_lib_dir:
+            #     openssl_lib_dir = platform_lib_dir
+            # openssl_libs = get_openssl_libs(version, arch, platform_lib_dir, openssl_lib_dir, is_debug)
+            # for lib in openssl_libs:
+            #     plugin_list.append(os.path.basename(lib))
+            #     copy_libs.append(valid_lib_pair(lib, os.path.join(dst_dir, os.path.basename(lib))))
+            print('INFO: Connext Secure requires OpenSSL libraries at runtime. Make sure they are available in the system path.')
 
         copy_libs.append(check_lib(plugin, arch, lib_ends, platform_lib_dir, dst_dir, is_debug))
 
